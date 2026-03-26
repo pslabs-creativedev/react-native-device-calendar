@@ -35,11 +35,13 @@ project.xcworkspace
 .classpath
 .cxx
 .gradle
+.kotlin
 .idea
 .project
 .settings
 local.properties
 android.iml
+example/android/.kotlin
 
 # Cocoapods
 #
