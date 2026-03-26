@@ -1,19 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   checkPermissions,
   createEvent,
   getCalendars,
   getEvents,
-  requestPermissions,
   type Calendar,
   type CalendarEvent,
   type PermissionStatus,
@@ -26,15 +17,8 @@ export default function App() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [message, setMessage] = useState('Checking calendar access...');
   const [creatingEvent, setCreatingEvent] = useState(false);
-  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
-    if (hasLoadedRef.current) {
-      return;
-    }
-
-    hasLoadedRef.current = true;
-
     const runInitialLoad = async () => {
       try {
         const status = await refreshPermissionStatus();
@@ -48,7 +32,7 @@ export default function App() {
         }
 
         setMessage(
-          'Tap "Request Calendar Permission" before creating an event. If Android still blocks the popup, open app settings and enable Calendar manually.'
+          'Tap "Create Example Event" to trigger the calendar permission flow.'
         );
       } catch (error) {
         const messageText =
@@ -87,27 +71,6 @@ export default function App() {
     setEvents(upcomingEvents.slice(0, 5));
   };
 
-  const handleRequestPermission = async () => {
-    try {
-      const granted = await requestPermissions();
-      const status = await refreshPermissionStatus();
-      await refreshCalendarData(status);
-
-      if (granted && (status === 'authorized' || status === 'writeOnly')) {
-        setMessage('Calendar permission granted.');
-        return;
-      }
-
-      setMessage(
-        'Calendar permission is still unavailable. Open app settings and allow Calendar permission manually.'
-      );
-    } catch (error) {
-      const messageText =
-        error instanceof Error ? error.message : 'Unknown calendar error';
-      setMessage(messageText);
-    }
-  };
-
   const handleCreateEvent = async () => {
     try {
       setCreatingEvent(true);
@@ -140,19 +103,6 @@ export default function App() {
       <Text style={styles.message}>{message}</Text>
 
       <Pressable
-        onPress={handleRequestPermission}
-        style={({ pressed }) => [
-          styles.button,
-          styles.secondaryButton,
-          pressed ? styles.buttonPressed : null,
-        ]}
-      >
-        <Text style={styles.secondaryButtonText}>
-          Request Calendar Permission
-        </Text>
-      </Pressable>
-
-      <Pressable
         onPress={handleCreateEvent}
         style={({ pressed }) => [
           styles.button,
@@ -165,21 +115,6 @@ export default function App() {
           {creatingEvent ? 'Creating Event...' : 'Create Example Event'}
         </Text>
       </Pressable>
-
-      {Platform.OS === 'android' && permissionStatus !== 'authorized' ? (
-        <Pressable
-          onPress={() => {
-            Linking.openSettings();
-          }}
-          style={({ pressed }) => [
-            styles.button,
-            styles.ghostButton,
-            pressed ? styles.buttonPressed : null,
-          ]}
-        >
-          <Text style={styles.ghostButtonText}>Open App Settings</Text>
-        </Pressable>
-      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Calendars</Text>
@@ -237,24 +172,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
-    textAlign: 'center',
-  },
-  secondaryButton: {
-    backgroundColor: '#DBEAFE',
-  },
-  secondaryButtonText: {
-    color: '#1D4ED8',
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  ghostButton: {
-    backgroundColor: '#F3F4F6',
-  },
-  ghostButtonText: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '600',
     textAlign: 'center',
   },
   section: {

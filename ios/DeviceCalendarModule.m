@@ -1,6 +1,4 @@
 #import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
-#import <EventKit/EventKit.h>
 
 @interface RCT_EXTERN_MODULE(DeviceCalendarModule, NSObject)
 RCT_EXTERN_METHOD(checkPermissions:(RCTPromiseResolveBlock)resolve

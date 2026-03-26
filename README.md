@@ -8,10 +8,10 @@ A React Native module for reading calendars and creating, listing, and deleting 
 npm install react-native-device-calendar
 ```
 
-For iOS:
+Then install iOS pods from your app project:
 
 ```sh
-cd ios && pod install
+npx pod-install
 ```
 
 ## Permissions
@@ -24,6 +24,8 @@ iOS apps must include a calendar usage description in `Info.plist`:
 ```
 
 Android permissions are declared by the library, but your app still needs to request them at runtime.
+
+The library will request permission automatically before reading calendars, reading events, or creating events. You can also call `requestPermissions()` yourself if you want to control that flow in your UI.
 
 ## Usage
 
@@ -83,6 +85,8 @@ On iOS 17+, `writeOnly` means the app can create events but cannot read calendar
 ### `requestPermissions()`
 
 Requests calendar access and resolves to `true` when access is granted.
+
+On iOS 17 and later, this module requests full event access so the same app session can read calendars and events after permission is granted.
 
 ### `createEvent(params)`
 
