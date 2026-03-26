@@ -3,12 +3,12 @@ pre-commit:
   commands:
     lint:
       glob: "*.{js,ts,jsx,tsx}"
-      run: ./scripts/with-node-path.sh ./node_modules/.bin/eslint {staged_files}
+      run: ROOT="$(git rev-parse --show-toplevel)" && "$ROOT/scripts/with-node-path.sh" "$ROOT/node_modules/.bin/eslint" {staged_files}
     types:
       glob: "*.{js,ts, jsx, tsx}"
-      run: ./scripts/with-node-path.sh ./node_modules/.bin/tsc
+      run: ROOT="$(git rev-parse --show-toplevel)" && "$ROOT/scripts/with-node-path.sh" "$ROOT/node_modules/.bin/tsc"
 commit-msg:
   parallel: true
   commands:
     commitlint:
-      run: ./scripts/with-node-path.sh ./node_modules/.bin/commitlint --edit {1}
+      run: ROOT="$(git rev-parse --show-toplevel)" && "$ROOT/scripts/with-node-path.sh" "$ROOT/node_modules/.bin/commitlint" --edit {1}
