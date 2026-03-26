@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 
 const LINKING_ERROR =
   `The package 'react-native-device-calendar' doesn't seem to be linked. Make sure: \n\n` +
@@ -56,6 +56,61 @@ export type PermissionStatus =
   | 'restricted'
   | 'unknown';
 
+type PermissionAccess = 'read' | 'write';
+const ANDROID_CALENDAR_PERMISSIONS = [
+  PermissionsAndroid.PERMISSIONS.READ_CALENDAR,
+  PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR,
+] as const;
+const ANDROID_WRITE_CALENDAR_PERMISSION =
+  PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR;
+
+const hasWritePermission = (status: PermissionStatus) =>
+  status === 'authorized' || status === 'writeOnly';
+
+const hasReadPermission = (status: PermissionStatus) => status === 'authorized';
+
+const ensurePermission = async (
+  access: PermissionAccess
+): Promise<PermissionStatus> => {
+  const initialStatus = await checkPermissions();
+  const hasRequiredAccess =
+    access === 'write'
+      ? hasWritePermission(initialStatus)
+      : hasReadPermission(initialStatus);
+
+  if (hasRequiredAccess) {
+    return initialStatus;
+  }
+
+  const granted =
+    Platform.OS === 'android' && access === 'write'
+      ? await requestAndroidWritePermission()
+      : await requestPermissions();
+  if (!granted) {
+    throw new Error(
+      access === 'write'
+        ? 'Calendar write access is required before creating an event.'
+        : 'Calendar access is required before reading calendar data.'
+    );
+  }
+
+  const nextStatus = await checkPermissions();
+  const hasNextAccess =
+    access === 'write'
+      ? hasWritePermission(nextStatus)
+      : hasReadPermission(nextStatus);
+
+  if (!hasNextAccess) {
+    throw new Error(
+      access === 'write'
+        ? 'Calendar write access is required before creating an event.'
+        : 'Calendar access is required before reading calendar data.'
+    );
+  }
+
+  return nextStatus;
+};
+
 /**
  * Check if the app has calendar permissions
  * @returns Permission status string
@@ -67,12 +122,44 @@ export type PermissionStatus =
  */
 export const checkPermissions = async (): Promise<PermissionStatus> => {
   try {
+    if (Platform.OS === 'android') {
+      const androidHasReadPermission = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_CALENDAR
+      );
+      const androidHasWritePermission = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR
+      );
+
+      if (androidHasReadPermission && androidHasWritePermission) {
+        return 'authorized';
+      }
+
+      if (androidHasWritePermission) {
+        return 'writeOnly';
+      }
+
+      return 'denied';
+    }
+
     const status = await DeviceCalendarModule.checkPermissions();
     return status as PermissionStatus;
   } catch (error) {
     console.error('Failed to check calendar permissions:', error);
     throw error;
   }
+};
+
+const requestAndroidWritePermission = async (): Promise<boolean> => {
+  const result = await PermissionsAndroid.request(
+    ANDROID_WRITE_CALENDAR_PERMISSION
+  );
+  if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+    throw new Error(
+      'Calendar permission is permanently denied. Open app settings to enable Calendar access.'
+    );
+  }
+
+  return result === PermissionsAndroid.RESULTS.GRANTED;
 };
 
 /**
@@ -86,6 +173,33 @@ export const checkPermissions = async (): Promise<PermissionStatus> => {
  */
 export const requestPermissions = async (): Promise<boolean> => {
   try {
+    if (Platform.OS === 'android') {
+      const results = await PermissionsAndroid.requestMultiple([
+        ...ANDROID_CALENDAR_PERMISSIONS,
+      ]);
+
+      const androidHasReadPermission =
+        results[PermissionsAndroid.PERMISSIONS.READ_CALENDAR] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+      const androidHasWritePermission =
+        results[PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+
+      const permanentlyDenied =
+        results[PermissionsAndroid.PERMISSIONS.READ_CALENDAR] ===
+          PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN ||
+        results[PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR] ===
+          PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+
+      if (permanentlyDenied) {
+        throw new Error(
+          'Calendar permission is permanently denied. Open app settings to enable Calendar access.'
+        );
+      }
+
+      return androidHasReadPermission && androidHasWritePermission;
+    }
+
     const granted = await DeviceCalendarModule.requestPermissions();
     return granted as boolean;
   } catch (error) {
@@ -112,6 +226,7 @@ export const createEvent = async (
   params: CreateEventParams
 ): Promise<string | number> => {
   try {
+    await ensurePermission('write');
     const eventId = await DeviceCalendarModule.createEvent(
       params.title,
       params.startDate.getTime() / 1000,
@@ -144,6 +259,7 @@ export const getEvents = async (
   params: GetEventsParams
 ): Promise<CalendarEvent[]> => {
   try {
+    await ensurePermission('read');
     const events = await DeviceCalendarModule.getEvents(
       params.startDate.getTime() / 1000,
       params.endDate.getTime() / 1000
@@ -169,6 +285,7 @@ export const deleteEvent = async (
   eventId: string | number
 ): Promise<boolean> => {
   try {
+    await ensurePermission('read');
     const result = await DeviceCalendarModule.deleteEvent(eventId.toString());
     return result as boolean;
   } catch (error) {
@@ -188,6 +305,7 @@ export const deleteEvent = async (
  */
 export const getCalendars = async (): Promise<Calendar[]> => {
   try {
+    await ensurePermission('read');
     const calendars = await DeviceCalendarModule.getCalendars();
     return calendars as Calendar[];
   } catch (error) {

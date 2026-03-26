@@ -10,10 +10,8 @@
     "build:ios": "react-native build-ios --scheme DeviceCalendarExample --mode Debug --extra-params \"-sdk iphonesimulator CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ GCC_OPTIMIZATION_LEVEL=0 GCC_PRECOMPILE_PREFIX_HEADER=YES ASSETCATALOG_COMPILER_OPTIMIZATION=time DEBUG_INFORMATION_FORMAT=dwarf COMPILER_INDEX_STORE_ENABLE=NO\""
   },
   "dependencies": {
-    "@react-native/new-app-screen": "0.84.1",
     "react": "19.2.3",
-    "react-native": "0.84.1",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native": "0.84.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -25,8 +23,7 @@
     "@react-native/babel-preset": "0.84.1",
     "@react-native/metro-config": "0.84.1",
     "@react-native/typescript-config": "0.84.1",
-    "@types/react": "^19.2.0",
-    "react-native-builder-bob": "^0.40.18"
+    "@types/react": "^19.2.0"
   },
   "engines": {
     "node": ">= 22.11.0"

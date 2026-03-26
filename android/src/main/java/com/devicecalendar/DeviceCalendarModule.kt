@@ -9,23 +9,20 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.*
-import com.facebook.react.modules.core.PermissionAwareActivity
-import com.facebook.react.modules.core.PermissionListener
 import java.util.TimeZone
 
 class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
-    private var permissionPromise: Promise? = null
-    private val permissionRequestCode = 12041
-
     override fun getName(): String = "DeviceCalendarModule"
 
     @ReactMethod
     fun checkPermissions(promise: Promise) {
-        val hasPermission = hasCalendarReadWritePermissions()
+        val hasReadPermission = hasCalendarReadPermission()
+        val hasWritePermission = hasCalendarWritePermission()
         val status = when {
-            hasPermission -> "authorized"
+            hasReadPermission && hasWritePermission -> "authorized"
+            hasWritePermission -> "writeOnly"
             else -> "denied"
         }
         promise.resolve(status)
@@ -33,42 +30,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun requestPermissions(promise: Promise) {
-        if (hasCalendarReadWritePermissions()) {
-            promise.resolve(true)
-            return
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            promise.resolve(true)
-            return
-        }
-
-        val activity = currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "Activity doesn't exist")
-            return
-        }
-
-        val permissionAwareActivity = activity as? PermissionAwareActivity
-        if (permissionAwareActivity == null) {
-            promise.reject("NO_PERMISSION_AWARE_ACTIVITY", "Host Activity doesn't support permission requests")
-            return
-        }
-
-        if (permissionPromise != null) {
-            promise.reject("PERMISSION_IN_PROGRESS", "A permission request is already in progress")
-            return
-        }
-
-        permissionPromise = promise
-        permissionAwareActivity.requestPermissions(
-            arrayOf(
-                Manifest.permission.READ_CALENDAR,
-                Manifest.permission.WRITE_CALENDAR
-            ),
-            permissionRequestCode,
-            createPermissionListener()
-        )
+        promise.resolve(hasCalendarWritePermission())
     }
 
     @ReactMethod
@@ -81,8 +43,8 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         calendarName: String,
         promise: Promise
     ) {
-        if (!checkCalendarPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar permission not granted")
+        if (!hasCalendarWritePermission()) {
+            promise.reject("PERMISSION_DENIED", "Calendar write permission not granted")
             return
         }
 
@@ -127,8 +89,8 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         endDate: Double,
         promise: Promise
     ) {
-        if (!checkCalendarPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar permission not granted")
+        if (!hasCalendarReadPermission()) {
+            promise.reject("PERMISSION_DENIED", "Calendar read permission not granted")
             return
         }
 
@@ -190,8 +152,8 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun deleteEvent(eventId: String, promise: Promise) {
-        if (!checkCalendarPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar permission not granted")
+        if (!hasCalendarWritePermission()) {
+            promise.reject("PERMISSION_DENIED", "Calendar write permission not granted")
             return
         }
 
@@ -206,8 +168,8 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getCalendars(promise: Promise) {
-        if (!checkCalendarPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar permission not granted")
+        if (!hasCalendarReadPermission()) {
+            promise.reject("PERMISSION_DENIED", "Calendar read permission not granted")
             return
         }
 
@@ -247,40 +209,26 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun checkCalendarPermission(): Boolean {
-        return hasCalendarReadWritePermissions()
-    }
-
-    private fun hasCalendarReadWritePermissions(): Boolean {
+    private fun hasCalendarReadPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return true
         }
 
-        val hasReadPermission = ContextCompat.checkSelfPermission(
+        return ContextCompat.checkSelfPermission(
             reactApplicationContext,
             Manifest.permission.READ_CALENDAR
         ) == PackageManager.PERMISSION_GRANTED
-        val hasWritePermission = ContextCompat.checkSelfPermission(
+    }
+
+    private fun hasCalendarWritePermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true
+        }
+
+        return ContextCompat.checkSelfPermission(
             reactApplicationContext,
             Manifest.permission.WRITE_CALENDAR
         ) == PackageManager.PERMISSION_GRANTED
-
-        return hasReadPermission && hasWritePermission
-    }
-
-    private fun createPermissionListener(): PermissionListener {
-        return PermissionListener { requestCode, _, grantResults ->
-            if (requestCode != permissionRequestCode) {
-                return@PermissionListener false
-            }
-
-            val granted = grantResults.isNotEmpty() &&
-                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-
-            permissionPromise?.resolve(granted)
-            permissionPromise = null
-            true
-        }
     }
 
     private fun getCalendarId(calendarName: String): Long {

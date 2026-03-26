@@ -3,10 +3,12 @@
   "version": "0.1.1",
   "description": "A modern React Native module to create and manage calendar events using native Android and iOS APIs.",
   "source": "./src/index.tsx",
+  "react-native": "./src/index.tsx",
   "main": "./lib/module/index.js",
   "exports": {
     ".": {
       "types": "./lib/typescript/src/index.d.ts",
+      "react-native": "./src/index.tsx",
       "default": "./lib/module/index.js"
     },
     "./package.json": "./package.json"
@@ -79,7 +81,6 @@
     "react-native": "0.84.1",
     "react-native-builder-bob": "^0.40.18",
     "release-it": "^17.10.0",
-    "turbo": "^1.10.7",
     "typescript": "^5.2.2"
   },
   "peerDependencies": {

@@ -80,7 +80,11 @@ class DeviceCalendarModule: NSObject, RCTBridgeModule {
     if #available(iOS 17.0, *) {
       eventStore.requestFullAccessToEvents { granted, error in
         if let error = error {
-          reject("PERMISSION_ERROR", "Failed to request calendar access", error)
+          reject(
+            "PERMISSION_ERROR",
+            "Failed to request calendar access: \(error.localizedDescription)",
+            error
+          )
         } else {
           resolve(granted)
         }
@@ -88,7 +92,11 @@ class DeviceCalendarModule: NSObject, RCTBridgeModule {
     } else {
       eventStore.requestAccess(to: .event) { granted, error in
         if let error = error {
-          reject("PERMISSION_ERROR", "Failed to request calendar access", error)
+          reject(
+            "PERMISSION_ERROR",
+            "Failed to request calendar access: \(error.localizedDescription)",
+            error
+          )
         } else {
           resolve(granted)
         }
