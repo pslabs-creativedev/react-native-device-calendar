@@ -46,14 +46,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prasanthsnk/react-native-device-calendar.git"
+    "url": "git+https://github.com/pslabs-creativedev/react-native-device-calendar.git"
   },
-  "author": "Prasanth S <prasanth.snk@gmail.com> (https://github.com/prasanthsnk)",
+  "author": "Prasanth S <prasanth.snk@gmail.com> (https://github.com/pslabs-creativedev)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/prasanthsnk/react-native-device-calendar/issues"
+    "url": "https://github.com/pslabs-creativedev/react-native-device-calendar/issues"
   },
-  "homepage": "https://github.com/prasanthsnk/react-native-device-calendar#readme",
+  "homepage": "https://github.com/pslabs-creativedev/react-native-device-calendar#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
