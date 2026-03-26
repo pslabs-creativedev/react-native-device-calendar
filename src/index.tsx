@@ -61,9 +61,6 @@ const ANDROID_CALENDAR_PERMISSIONS = [
   PermissionsAndroid.PERMISSIONS.READ_CALENDAR,
   PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR,
 ] as const;
-const ANDROID_WRITE_CALENDAR_PERMISSION =
-  PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR;
-
 const hasWritePermission = (status: PermissionStatus) =>
   status === 'authorized' || status === 'writeOnly';
 
@@ -82,10 +79,7 @@ const ensurePermission = async (
     return initialStatus;
   }
 
-  const granted =
-    Platform.OS === 'android' && access === 'write'
-      ? await requestAndroidWritePermission()
-      : await requestPermissions();
+  const granted = await requestPermissions();
   if (!granted) {
     throw new Error(
       access === 'write'
@@ -147,19 +141,6 @@ export const checkPermissions = async (): Promise<PermissionStatus> => {
     console.error('Failed to check calendar permissions:', error);
     throw error;
   }
-};
-
-const requestAndroidWritePermission = async (): Promise<boolean> => {
-  const result = await PermissionsAndroid.request(
-    ANDROID_WRITE_CALENDAR_PERMISSION
-  );
-  if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-    throw new Error(
-      'Calendar permission is permanently denied. Open app settings to enable Calendar access.'
-    );
-  }
-
-  return result === PermissionsAndroid.RESULTS.GRANTED;
 };
 
 /**

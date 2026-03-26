@@ -30,7 +30,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun requestPermissions(promise: Promise) {
-        promise.resolve(hasCalendarWritePermission())
+        promise.resolve(hasCalendarReadPermission() && hasCalendarWritePermission())
     }
 
     @ReactMethod
@@ -43,8 +43,11 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         calendarName: String,
         promise: Promise
     ) {
-        if (!hasCalendarWritePermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar write permission not granted")
+        if (!hasCalendarReadPermission() || !hasCalendarWritePermission()) {
+            promise.reject(
+                "PERMISSION_DENIED",
+                "Calendar read and write permissions are required to create an event"
+            )
             return
         }
 
@@ -77,7 +80,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
             }
 
             val eventId = ContentUris.parseId(uri)
-            promise.resolve(eventId)
+            promise.resolve(eventId.toString())
         } catch (e: Exception) {
             promise.reject("CREATE_ERROR", "Failed to create event: ${e.message}", e)
         }
@@ -133,7 +136,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                     val calendarName = getCalendarNameById(calendarId)
 
                     events.add(mapOf(
-                        "id" to id,
+                        "id" to id.toString(),
                         "title" to title,
                         "startDate" to eventStartDate / 1000.0,
                         "endDate" to eventEndDate / 1000.0,
@@ -196,7 +199,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                     val displayName = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME))
 
                     calendars.add(mapOf(
-                        "id" to id,
+                        "id" to id.toString(),
                         "name" to (displayName ?: name),
                         "type" to 1 // Simplified for Android
                     ))
@@ -232,57 +235,60 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     }
 
     private fun getCalendarId(calendarName: String): Long {
-        val projection = arrayOf(
-            CalendarContract.Calendars._ID,
-            CalendarContract.Calendars.NAME
-        )
-        
-        val selection = if (calendarName.isNotEmpty()) {
-            "${CalendarContract.Calendars.NAME} = ?"
-        } else {
-            null
-        }
-        
-        val selectionArgs = if (calendarName.isNotEmpty()) {
-            arrayOf(calendarName)
-        } else {
-            null
-        }
-        
-        val cursor: Cursor? = reactApplicationContext.contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            selection,
-            selectionArgs,
-            null
-        )
-        
-        return cursor?.use {
-            if (it.moveToFirst()) {
-                it.getLong(it.getColumnIndexOrThrow(CalendarContract.Calendars._ID))
-            } else {
-                getDefaultCalendarId()
-            }
-        } ?: getDefaultCalendarId()
+        return findCalendarId(calendarName, visibleOnly = true)
+            ?: findCalendarId(calendarName, visibleOnly = false)
+            ?: getDefaultCalendarId()
     }
 
     private fun getDefaultCalendarId(): Long {
-        val projection = arrayOf(CalendarContract.Calendars._ID)
+        return findCalendarId("", visibleOnly = true)
+            ?: findCalendarId("", visibleOnly = false)
+            ?: throw Exception("No writable calendars found on device")
+    }
+
+    private fun findCalendarId(
+        calendarName: String,
+        visibleOnly: Boolean
+    ): Long? {
+        val projection = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.NAME,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
+        )
+
+        val selectionParts = mutableListOf(
+            "${CalendarContract.Calendars.SYNC_EVENTS} = 1",
+            "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= ${CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR}"
+        )
+        val selectionArgs = mutableListOf<String>()
+
+        if (visibleOnly) {
+            selectionParts.add("${CalendarContract.Calendars.VISIBLE} = 1")
+        }
+
+        if (calendarName.isNotEmpty()) {
+            selectionParts.add(
+                "(${CalendarContract.Calendars.NAME} = ? OR ${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} = ?)"
+            )
+            selectionArgs.add(calendarName)
+            selectionArgs.add(calendarName)
+        }
+
         val cursor: Cursor? = reactApplicationContext.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
             projection,
-            null,
-            null,
-            null
+            selectionParts.joinToString(" AND "),
+            if (selectionArgs.isEmpty()) null else selectionArgs.toTypedArray(),
+             "${CalendarContract.Calendars._ID} ASC"
         )
-        
+
         return cursor?.use {
             if (it.moveToFirst()) {
                 it.getLong(it.getColumnIndexOrThrow(CalendarContract.Calendars._ID))
             } else {
-                throw Exception("No calendars found on device")
+                null
             }
-        } ?: throw Exception("No calendars found on device")
+        }
     }
 
     private fun getCalendarNameById(calendarId: Long): String {
