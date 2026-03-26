@@ -27,6 +27,37 @@ Android permissions are declared by the library, but your app still needs to req
 
 The library will request permission automatically before reading calendars, reading events, or creating events. You can also call `requestPermissions()` yourself if you want to control that flow in your UI.
 
+## Expo Support
+
+This library uses native iOS and Android code.
+
+- `Expo Go`: not supported
+- `expo prebuild`: supported
+- `expo run:ios`: supported
+- `expo run:android`: supported
+- Expo development builds: supported
+- EAS Build: supported
+
+If you are using Expo, make sure your project has been prebuilt before running the app:
+
+```sh
+npx expo prebuild
+```
+
+On iOS, add the calendar usage description to your Expo config so it is written to `Info.plist` during prebuild:
+
+```json
+{
+  "expo": {
+    "ios": {
+      "infoPlist": {
+        "NSCalendarsUsageDescription": "This app needs calendar access to manage events."
+      }
+    }
+  }
+}
+```
+
 ## Usage
 
 ```ts
