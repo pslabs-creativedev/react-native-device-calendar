@@ -53,9 +53,12 @@ example/vendor/
 # node.js
 #
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.eslintcache
+coverage/
 
 # BUCK
 buck-out/
@@ -71,8 +74,8 @@ android/keystores/debug.keystore
 !.yarn/sdks
 !.yarn/versions
 
-# Expo
-.expo/
+# Ruby / Bundler
+.bundle/
 
 # Turborepo
 .turbo/
