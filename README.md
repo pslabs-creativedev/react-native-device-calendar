@@ -1,6 +1,6 @@
 # react-native-device-calendar
 
-A React Native module for reading calendars, creating and updating events, finding events by ID, and opening native calendar editors with prefilled data on Android and iOS.
+A React Native calendar event module for reading calendars, creating and updating native calendar events, finding events by ID, deleting events, and opening native calendar editors with prefilled data on Android and iOS.
 
 ## Installation
 
@@ -26,6 +26,22 @@ iOS apps must include a calendar usage description in `Info.plist`:
 Android permissions are declared by the library, but your app still needs to request them at runtime.
 
 The library requests permission automatically before reading calendars, reading events, creating events, updating events, or opening the event editor.
+
+Access requirements:
+
+- `getCalendars()`, `getEvents()`, and `findEventById()` require read access
+- `createEvent()`, `updateEvent()`, `openEventEditor()`, and `deleteEvent()` require write access
+
+On iOS 17+, `writeOnly` means the app can create or edit events but cannot read calendars or existing events.
+
+## Validation
+
+The library validates event input before calling the native APIs:
+
+- `title` must not be empty
+- `startDate` must be a valid `Date`
+- `endDate` must be a valid `Date`
+- `startDate` must be earlier than `endDate`
 
 ## Usage
 
@@ -73,6 +89,13 @@ const updated = await updateEvent(created.eventId!, {
   calendarName: calendars[0]?.name,
 });
 
+const createInEditor = await openEventEditor({
+  title: 'New event from editor',
+  startDate: new Date('2026-03-27T15:00:00'),
+  endDate: new Date('2026-03-27T16:00:00'),
+  notes: 'This opens the native calendar editor for creating a new event',
+});
+
 const editorResult = await openEventEditor({
   eventId: updated.eventId!,
   title: 'Updated project sync',
@@ -111,6 +134,13 @@ Behavior notes:
 - `openEventEditor()` returns `{ status: 'saved' | 'cancelled', eventId }` on iOS
 - `openEventEditor()` returns `{ status: 'opened', eventId }` on Android because the calendar app is launched externally and does not reliably report save/cancel results back
 
+Platform note:
+
+- On Android, `openEventEditor()` launches the calendar app and resolves as soon as the editor is opened
+- On iOS, `openEventEditor()` resolves after the user saves or cancels the native editor
+- On both platforms, passing `eventId` opens the editor for updating an existing native calendar event
+- If `eventId` is omitted, `openEventEditor()` opens the editor for creating a new native calendar event
+
 ## Typed Errors
 
 All public APIs throw `DeviceCalendarError`:
@@ -134,7 +164,11 @@ type CalendarErrorCode =
 
 ```ts
 try {
-  await createEvent(...);
+  await createEvent({
+    title: '',
+    startDate: new Date(),
+    endDate: new Date(),
+  });
 } catch (error) {
   const calendarError = error as DeviceCalendarError;
   console.log(calendarError.code, calendarError.message);
@@ -183,7 +217,7 @@ Returns `Promise<CalendarActionResult>`.
 
 ### `openEventEditor(params)`
 
-Opens the native event editor with prefilled data.
+Opens the native calendar event editor with prefilled data.
 
 ```ts
 type OpenEventEditorParams = EventInput & {
@@ -191,11 +225,18 @@ type OpenEventEditorParams = EventInput & {
 };
 ```
 
-If `eventId` is provided, the editor opens that existing event for editing.
+If `eventId` is provided, the editor opens that existing native calendar event for editing. If `eventId` is omitted, the editor opens for creating a new event.
 
 ### `getEvents(params)`
 
 Returns events overlapping the provided date range.
+
+```ts
+type GetEventsParams = {
+  startDate: Date;
+  endDate: Date;
+};
+```
 
 ### `findEventById(eventId)`
 
@@ -208,6 +249,8 @@ Returns the calendars available on the device.
 ### `deleteEvent(eventId)`
 
 Deletes an event by native identifier.
+
+Returns `Promise<boolean>`.
 
 ## Contributing
 
