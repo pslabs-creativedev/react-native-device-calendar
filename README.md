@@ -207,6 +207,18 @@ type EventInput = {
 };
 ```
 
+Required params:
+
+- `title`
+- `startDate`
+- `endDate`
+
+Optional params:
+
+- `location`
+- `notes`
+- `calendarName`
+
 Returns `Promise<CalendarActionResult>`.
 
 ### `updateEvent(eventId, params)`
@@ -225,6 +237,13 @@ type OpenEventEditorParams = EventInput & {
 };
 ```
 
+Optional params:
+
+- `eventId`
+- `location`
+- `notes`
+- `calendarName`
+
 If `eventId` is provided, the editor opens that existing native calendar event for editing. If `eventId` is omitted, the editor opens for creating a new event.
 
 ### `getEvents(params)`
@@ -237,6 +256,11 @@ type GetEventsParams = {
   endDate: Date;
 };
 ```
+
+Required params:
+
+- `startDate`
+- `endDate`
 
 ### `findEventById(eventId)`
 
