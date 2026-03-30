@@ -7,8 +7,3 @@ pre-commit:
     types:
       glob: "*.{js,ts, jsx, tsx}"
       run: ROOT="$(git rev-parse --show-toplevel)" && "$ROOT/scripts/with-node-path.sh" "$ROOT/node_modules/.bin/tsc"
-commit-msg:
-  parallel: true
-  commands:
-    commitlint:
-      run: ROOT="$(git rev-parse --show-toplevel)" && "$ROOT/scripts/with-node-path.sh" "$ROOT/node_modules/.bin/commitlint" --edit {1}

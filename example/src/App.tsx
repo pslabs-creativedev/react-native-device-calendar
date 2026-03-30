@@ -3,9 +3,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   checkPermissions,
   createEvent,
+  deleteEvent,
+  findEventById,
   getCalendars,
   getEvents,
+  openEventEditor,
+  updateEvent,
   type Calendar,
+  type CalendarActionResult,
   type CalendarEvent,
   type PermissionStatus,
 } from 'react-native-device-calendar';
@@ -17,6 +22,10 @@ export default function App() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [message, setMessage] = useState('Checking calendar access...');
   const [creatingEvent, setCreatingEvent] = useState(false);
+  const [lastEventId, setLastEventId] = useState<string | number | null>(null);
+  const [lastSavedEvent, setLastSavedEvent] = useState<CalendarEvent | null>(
+    null
+  );
 
   useEffect(() => {
     const runInitialLoad = async () => {
@@ -26,13 +35,13 @@ export default function App() {
 
         if (status === 'authorized' || status === 'writeOnly') {
           setMessage(
-            'Calendar access is ready. Tap "Create Example Event" to add an event.'
+            'Calendar access is ready. You can save directly or open the native editor with prefilled event details.'
           );
           return;
         }
 
         setMessage(
-          'Tap "Create Example Event" to trigger the calendar permission flow.'
+          'Tap either event button to trigger the calendar permission flow.'
         );
       } catch (error) {
         const messageText =
@@ -56,6 +65,7 @@ export default function App() {
     if (status !== 'authorized') {
       setCalendars([]);
       setEvents([]);
+      setLastSavedEvent(null);
       return;
     }
 
@@ -71,12 +81,25 @@ export default function App() {
     setEvents(upcomingEvents.slice(0, 5));
   };
 
+  const syncLastSavedEvent = async (eventId: string | number | null) => {
+    setLastEventId(eventId);
+
+    if (!eventId) {
+      setLastSavedEvent(null);
+      return null;
+    }
+
+    const event = await findEventById(eventId);
+    setLastSavedEvent(event);
+    return event;
+  };
+
   const handleCreateEvent = async () => {
     try {
       setCreatingEvent(true);
       const startDate = new Date(Date.now() + 60 * 60 * 1000);
       const endDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
-      const eventId = await createEvent({
+      const result = await createEvent({
         title: 'Device calendar example event',
         startDate,
         endDate,
@@ -86,7 +109,111 @@ export default function App() {
 
       const status = await refreshPermissionStatus();
       await refreshCalendarData(status);
-      setMessage(`Created example event successfully. Event ID: ${eventId}`);
+      const savedEvent = await syncLastSavedEvent(result.eventId);
+      setMessage(formatActionMessage('Silent save', result));
+      if (savedEvent) {
+        setMessage(
+          `${formatActionMessage('Silent save', result)} Title: ${savedEvent.title}`
+        );
+      }
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Unknown calendar error';
+      setMessage(messageText);
+    } finally {
+      setCreatingEvent(false);
+    }
+  };
+
+  const handleOpenEventEditor = async () => {
+    try {
+      setCreatingEvent(true);
+      const startDate = new Date(Date.now() + 60 * 60 * 1000);
+      const endDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      const result = await openEventEditor({
+        eventId: lastEventId ?? undefined,
+        title: 'Device calendar example event',
+        startDate,
+        endDate,
+        notes: 'Created by the example app',
+        location: 'Example calendar demo',
+      });
+
+      const status = await refreshPermissionStatus();
+      await refreshCalendarData(status);
+      const savedEvent = await syncLastSavedEvent(result.eventId);
+      setMessage(
+        savedEvent
+          ? `${formatActionMessage('Editor flow', result)} Title: ${savedEvent.title}`
+          : formatActionMessage('Editor flow', result)
+      );
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Unknown calendar error';
+      setMessage(messageText);
+    } finally {
+      setCreatingEvent(false);
+    }
+  };
+
+  const handleUpdateLastEvent = async () => {
+    if (!lastEventId) {
+      setMessage(
+        'Create or save an event first so there is something to update.'
+      );
+      return;
+    }
+
+    try {
+      setCreatingEvent(true);
+      const startDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      const endDate = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      const result = await updateEvent(lastEventId, {
+        title: 'Updated example event',
+        startDate,
+        endDate,
+        notes: 'Updated by the example app',
+        location: 'Updated location',
+      });
+
+      const status = await refreshPermissionStatus();
+      await refreshCalendarData(status);
+      const refreshedEvent = await syncLastSavedEvent(result.eventId);
+      setMessage(
+        `${formatActionMessage('Update flow', result)} Latest title: ${
+          refreshedEvent?.title ?? 'unknown'
+        }`
+      );
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Unknown calendar error';
+      setMessage(messageText);
+    } finally {
+      setCreatingEvent(false);
+    }
+  };
+
+  const handleDeleteLastEvent = async () => {
+    if (!lastEventId) {
+      setMessage(
+        'Create or save an event first so there is something to delete.'
+      );
+      return;
+    }
+
+    try {
+      setCreatingEvent(true);
+      const deleted = await deleteEvent(lastEventId);
+      const status = await refreshPermissionStatus();
+      await refreshCalendarData(status);
+
+      if (deleted) {
+        await syncLastSavedEvent(null);
+        setMessage('Deleted the last saved event successfully.');
+        return;
+      }
+
+      setMessage('No event was deleted.');
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : 'Unknown calendar error';
@@ -112,7 +239,52 @@ export default function App() {
         disabled={creatingEvent}
       >
         <Text style={styles.buttonText}>
-          {creatingEvent ? 'Creating Event...' : 'Create Example Event'}
+          {creatingEvent ? 'Working...' : 'Create Event Silently'}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={handleUpdateLastEvent}
+        style={({ pressed }) => [
+          styles.button,
+          styles.tertiaryButton,
+          pressed && !creatingEvent ? styles.buttonPressed : null,
+          creatingEvent ? styles.buttonDisabled : null,
+        ]}
+        disabled={creatingEvent}
+      >
+        <Text style={styles.buttonText}>
+          {creatingEvent ? 'Working...' : 'Update Last Saved Event'}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={handleDeleteLastEvent}
+        style={({ pressed }) => [
+          styles.button,
+          styles.deleteButton,
+          pressed && !creatingEvent ? styles.buttonPressed : null,
+          creatingEvent ? styles.buttonDisabled : null,
+        ]}
+        disabled={creatingEvent}
+      >
+        <Text style={styles.buttonText}>
+          {creatingEvent ? 'Working...' : 'Delete Last Saved Event'}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={handleOpenEventEditor}
+        style={({ pressed }) => [
+          styles.button,
+          styles.secondaryButton,
+          pressed && !creatingEvent ? styles.buttonPressed : null,
+          creatingEvent ? styles.buttonDisabled : null,
+        ]}
+        disabled={creatingEvent}
+      >
+        <Text style={styles.buttonText}>
+          {creatingEvent ? 'Working...' : 'Open Prefilled Calendar Editor'}
         </Text>
       </Pressable>
 
@@ -133,9 +305,30 @@ export default function App() {
             : 'No events loaded'}
         </Text>
       </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Last Event ID</Text>
+        <Text style={styles.sectionBody}>
+          {lastEventId ?? 'No event saved yet'}
+        </Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Last Saved Event</Text>
+        <Text style={styles.sectionBody}>
+          {lastSavedEvent
+            ? `${lastSavedEvent.title} (${lastSavedEvent.id})`
+            : 'No saved event in state'}
+        </Text>
+      </View>
     </ScrollView>
   );
 }
+
+const formatActionMessage = (label: string, result: CalendarActionResult) => {
+  const eventIdText = result.eventId ? ` Event ID: ${result.eventId}` : '';
+  return `${label} finished with status "${result.status}".${eventIdText}`;
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -161,6 +354,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  secondaryButton: {
+    backgroundColor: '#1F2937',
+  },
+  tertiaryButton: {
+    backgroundColor: '#374151',
+  },
+  deleteButton: {
+    backgroundColor: '#991B1B',
   },
   buttonPressed: {
     opacity: 0.85,

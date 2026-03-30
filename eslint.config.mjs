@@ -18,6 +18,11 @@ export default defineConfig([
   {
     extends: fixupConfigRules(compat.extends('@react-native', 'prettier')),
     plugins: { prettier },
+    languageOptions: {
+      parserOptions: {
+        warnOnUnsupportedTypeScriptVersion: false,
+      },
+    },
     rules: {
       'react/react-in-jsx-scope': 'off',
       'prettier/prettier': [

@@ -1400,7 +1400,7 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-  - react-native-device-calendar (0.1.1):
+  - react-native-device-calendar (0.1.4):
     - React-Core
   - React-NativeModulesApple (0.84.1):
     - hermes-engine
@@ -2056,7 +2056,7 @@ SPEC CHECKSUMS:
   React-logger: 517377b1d2ba7ac722d47fb2183b98de86632063
   React-Mapbuffer: 45e088dfb58dc326ae20cca1814d3726553c4cad
   React-microtasksnativemodule: ab9d1a05fe1f58ea44a97d307ef1b53463f45a3f
-  react-native-device-calendar: a1a3eeb0fc95e1a8573dbeb57ee4efa0276e6649
+  react-native-device-calendar: c40e8f0767f325e9f6e41ee1b04917e4c3ff2d98
   React-NativeModulesApple: b94faa2dce6d8c0a9d722ed7ee27b996d28b62d1
   React-networking: e409d8fb062162da6293e98b77f8d80cf4430e07
   React-oscompat: ff26abf0ae3e3fdbe47b44224571e3fc7226a573

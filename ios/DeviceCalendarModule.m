@@ -16,8 +16,32 @@ RCT_EXTERN_METHOD(createEvent:(NSString *)title
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(openEventEditor:(NSString *)eventId
+                  title:(NSString *)title
+                  startDate:(double)startDate
+                  endDate:(double)endDate
+                  location:(NSString *)location
+                  notes:(NSString *)notes
+                  calendarName:(NSString *)calendarName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(updateEvent:(NSString *)eventId
+                  title:(NSString *)title
+                  startDate:(double)startDate
+                  endDate:(double)endDate
+                  location:(NSString *)location
+                  notes:(NSString *)notes
+                  calendarName:(NSString *)calendarName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(getEvents:(double)startDate
                   endDate:(double)endDate
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(findEventById:(NSString *)eventId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

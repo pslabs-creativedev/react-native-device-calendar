@@ -11,5 +11,7 @@ if [ -d /usr/local/bin ]; then
 fi
 
 export PATH
+export NODE_NO_WARNINGS=1
+export TSESTREE_SUPPRESS_VERSION_WARNING=true
 
 exec "$@"

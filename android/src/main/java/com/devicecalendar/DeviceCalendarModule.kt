@@ -1,15 +1,22 @@
 package com.devicecalendar
 
-import android.content.ContentValues
-import android.database.Cursor
-import android.provider.CalendarContract
-import android.content.ContentUris
 import android.Manifest
-import android.content.pm.PackageManager
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Intent
+import android.database.Cursor
 import android.os.Build
+import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
-import com.facebook.react.bridge.*
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableArray
+import com.facebook.react.bridge.WritableMap
 import java.util.TimeZone
+import android.content.pm.PackageManager
 
 class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -18,11 +25,9 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun checkPermissions(promise: Promise) {
-        val hasReadPermission = hasCalendarReadPermission()
-        val hasWritePermission = hasCalendarWritePermission()
         val status = when {
-            hasReadPermission && hasWritePermission -> "authorized"
-            hasWritePermission -> "writeOnly"
+            hasCalendarReadPermission() && hasCalendarWritePermission() -> "authorized"
+            hasCalendarWritePermission() -> "writeOnly"
             else -> "denied"
         }
         promise.resolve(status)
@@ -43,31 +48,20 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         calendarName: String,
         promise: Promise
     ) {
-        if (!hasCalendarReadPermission() || !hasCalendarWritePermission()) {
-            promise.reject(
-                "PERMISSION_DENIED",
-                "Calendar read and write permissions are required to create an event"
-            )
+        if (!hasCalendarWritePermission()) {
+            rejectPermissionDenied(promise, "create an event")
             return
         }
 
         try {
-            val startMillis = (startDate * 1000).toLong()
-            val endMillis = (endDate * 1000).toLong()
-
-            val calendarId = getCalendarId(calendarName)
-            
-            val values = ContentValues().apply {
-                put(CalendarContract.Events.DTSTART, startMillis)
-                put(CalendarContract.Events.DTEND, endMillis)
-                put(CalendarContract.Events.TITLE, title)
-                put(CalendarContract.Events.DESCRIPTION, notes)
-                put(CalendarContract.Events.CALENDAR_ID, calendarId)
-                put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
-                if (location.isNotEmpty()) {
-                    put(CalendarContract.Events.EVENT_LOCATION, location)
-                }
-            }
+            val values = buildEventValues(
+                title = title,
+                startDate = startDate,
+                endDate = endDate,
+                location = location,
+                notes = notes,
+                calendarName = calendarName
+            )
 
             val uri = reactApplicationContext.contentResolver.insert(
                 CalendarContract.Events.CONTENT_URI,
@@ -79,10 +73,120 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            val eventId = ContentUris.parseId(uri)
-            promise.resolve(eventId.toString())
+            val eventId = ContentUris.parseId(uri).toString()
+            promise.resolve(actionResult("saved", eventId))
         } catch (e: Exception) {
             promise.reject("CREATE_ERROR", "Failed to create event: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun updateEvent(
+        eventId: String,
+        title: String,
+        startDate: Double,
+        endDate: Double,
+        location: String,
+        notes: String,
+        calendarName: String,
+        promise: Promise
+    ) {
+        if (!hasCalendarWritePermission()) {
+            rejectPermissionDenied(promise, "update an event")
+            return
+        }
+
+        try {
+            val uri = ContentUris.withAppendedId(
+                CalendarContract.Events.CONTENT_URI,
+                eventId.toLong()
+            )
+
+            val rowsUpdated = reactApplicationContext.contentResolver.update(
+                uri,
+                buildEventValues(
+                    title = title,
+                    startDate = startDate,
+                    endDate = endDate,
+                    location = location,
+                    notes = notes,
+                    calendarName = calendarName
+                ),
+                null,
+                null
+            )
+
+            if (rowsUpdated <= 0) {
+                promise.reject("EVENT_NOT_FOUND", "Event not found")
+                return
+            }
+
+            promise.resolve(actionResult("saved", eventId))
+        } catch (e: Exception) {
+            promise.reject("UPDATE_ERROR", "Failed to update event: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun openEventEditor(
+        eventId: String,
+        title: String,
+        startDate: Double,
+        endDate: Double,
+        location: String,
+        notes: String,
+        calendarName: String,
+        promise: Promise
+    ) {
+        if (!hasCalendarWritePermission()) {
+            rejectPermissionDenied(promise, "open the calendar editor")
+            return
+        }
+
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject(
+                "ACTIVITY_UNAVAILABLE",
+                "Unable to open the calendar editor without an active Activity"
+            )
+            return
+        }
+
+        try {
+            val startMillis = (startDate * 1000).toLong()
+            val endMillis = (endDate * 1000).toLong()
+
+            val intent = if (eventId.isNotEmpty()) {
+                Intent(Intent.ACTION_EDIT).apply {
+                    data = ContentUris.withAppendedId(
+                        CalendarContract.Events.CONTENT_URI,
+                        eventId.toLong()
+                    )
+                }
+            } else {
+                Intent(Intent.ACTION_INSERT).apply {
+                    data = CalendarContract.Events.CONTENT_URI
+                }
+            }
+
+            intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+            intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+            intent.putExtra(CalendarContract.Events.TITLE, title)
+            intent.putExtra(CalendarContract.Events.DESCRIPTION, notes)
+            intent.putExtra(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+
+            if (location.isNotEmpty()) {
+                intent.putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+
+            if (calendarName.isNotEmpty()) {
+                intent.putExtra(CalendarContract.Events.CALENDAR_ID, getCalendarId(calendarName))
+            }
+
+            activity.startActivity(intent)
+            promise.resolve(actionResult("opened", if (eventId.isEmpty()) null else eventId))
+        } catch (e: Exception) {
+            promise.reject("EDITOR_ERROR", "Failed to open event editor: ${e.message}", e)
         }
     }
 
@@ -93,7 +197,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
         promise: Promise
     ) {
         if (!hasCalendarReadPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar read permission not granted")
+            rejectPermissionDenied(promise, "read calendar events")
             return
         }
 
@@ -101,20 +205,12 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
             val startMillis = (startDate * 1000).toLong()
             val endMillis = (endDate * 1000).toLong()
 
-            val projection = arrayOf(
-                CalendarContract.Events._ID,
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DTSTART,
-                CalendarContract.Events.DTEND,
-                CalendarContract.Events.EVENT_LOCATION,
-                CalendarContract.Events.DESCRIPTION,
-                CalendarContract.Events.CALENDAR_ID
-            )
-
-            val selection = "${CalendarContract.Events.DTEND} >= ? AND ${CalendarContract.Events.DTSTART} <= ?"
+            val projection = eventProjection()
+            val selection =
+                "${CalendarContract.Events.DTEND} >= ? AND ${CalendarContract.Events.DTSTART} <= ?"
             val selectionArgs = arrayOf(startMillis.toString(), endMillis.toString())
 
-            val cursor: Cursor? = reactApplicationContext.contentResolver.query(
+            val cursor = reactApplicationContext.contentResolver.query(
                 CalendarContract.Events.CONTENT_URI,
                 projection,
                 selection,
@@ -122,46 +218,53 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                 null
             )
 
-            val events = mutableListOf<Map<String, Any>>()
-            cursor?.use {
-                while (it.moveToNext()) {
-                    val id = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events._ID))
-                    val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.TITLE))
-                    val eventStartDate = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
-                    val eventEndDate = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
-                    val eventLocation = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION))
-                    val description = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION))
-                    val calendarId = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID))
-                    
-                    val calendarName = getCalendarNameById(calendarId)
-
-                    events.add(mapOf(
-                        "id" to id.toString(),
-                        "title" to title,
-                        "startDate" to eventStartDate / 1000.0,
-                        "endDate" to eventEndDate / 1000.0,
-                        "location" to (eventLocation ?: ""),
-                        "notes" to (description ?: ""),
-                        "calendarName" to calendarName
-                    ))
-                }
-            }
-
-            promise.resolve(Arguments.makeNativeArray(events.map { Arguments.makeNativeMap(it) }))
+            promise.resolve(readEvents(cursor))
         } catch (e: Exception) {
             promise.reject("QUERY_ERROR", "Failed to get events: ${e.message}", e)
         }
     }
 
     @ReactMethod
-    fun deleteEvent(eventId: String, promise: Promise) {
-        if (!hasCalendarWritePermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar write permission not granted")
+    fun findEventById(eventId: String, promise: Promise) {
+        if (!hasCalendarReadPermission()) {
+            rejectPermissionDenied(promise, "read calendar events")
             return
         }
 
         try {
-            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId.toLong())
+            val cursor = reactApplicationContext.contentResolver.query(
+                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId.toLong()),
+                eventProjection(),
+                null,
+                null,
+                null
+            )
+
+            val events = readEvents(cursor)
+            promise.resolve(
+                if (events.size() > 0) {
+                    events.getMap(0)
+                } else {
+                    null
+                }
+            )
+        } catch (e: Exception) {
+            promise.reject("QUERY_ERROR", "Failed to get event: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun deleteEvent(eventId: String, promise: Promise) {
+        if (!hasCalendarWritePermission()) {
+            rejectPermissionDenied(promise, "delete an event")
+            return
+        }
+
+        try {
+            val uri = ContentUris.withAppendedId(
+                CalendarContract.Events.CONTENT_URI,
+                eventId.toLong()
+            )
             val rowsDeleted = reactApplicationContext.contentResolver.delete(uri, null, null)
             promise.resolve(rowsDeleted > 0)
         } catch (e: Exception) {
@@ -172,7 +275,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getCalendars(promise: Promise) {
         if (!hasCalendarReadPermission()) {
-            promise.reject("PERMISSION_DENIED", "Calendar read permission not granted")
+            rejectPermissionDenied(promise, "read calendars")
             return
         }
 
@@ -183,7 +286,7 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
             )
 
-            val cursor: Cursor? = reactApplicationContext.contentResolver.query(
+            val cursor = reactApplicationContext.contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
                 projection,
                 null,
@@ -196,20 +299,123 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
                 while (it.moveToNext()) {
                     val id = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Calendars._ID))
                     val name = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.NAME))
-                    val displayName = it.getString(it.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME))
+                    val displayName =
+                        it.getString(
+                            it.getColumnIndexOrThrow(
+                                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
+                            )
+                        )
 
-                    calendars.add(mapOf(
-                        "id" to id.toString(),
-                        "name" to (displayName ?: name),
-                        "type" to 1 // Simplified for Android
-                    ))
+                    calendars.add(
+                        mapOf(
+                            "id" to id.toString(),
+                            "name" to (displayName ?: name),
+                            "type" to 1
+                        )
+                    )
                 }
             }
 
-            promise.resolve(Arguments.makeNativeArray(calendars.map { Arguments.makeNativeMap(it) }))
+            promise.resolve(
+                Arguments.makeNativeArray(calendars.map { Arguments.makeNativeMap(it) })
+            )
         } catch (e: Exception) {
             promise.reject("QUERY_ERROR", "Failed to get calendars: ${e.message}", e)
         }
+    }
+
+    private fun actionResult(status: String, eventId: String?): WritableMap {
+        return Arguments.createMap().apply {
+            putString("status", status)
+            if (eventId != null) {
+                putString("eventId", eventId)
+            } else {
+                putNull("eventId")
+            }
+        }
+    }
+
+    private fun buildEventValues(
+        title: String,
+        startDate: Double,
+        endDate: Double,
+        location: String,
+        notes: String,
+        calendarName: String
+    ): ContentValues {
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.DTSTART, (startDate * 1000).toLong())
+            put(CalendarContract.Events.DTEND, (endDate * 1000).toLong())
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.DESCRIPTION, notes)
+            put(CalendarContract.Events.CALENDAR_ID, getCalendarId(calendarName))
+            put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+            put(CalendarContract.Events.EVENT_LOCATION, location)
+        }
+
+        return values
+    }
+
+    private fun eventProjection(): Array<String> {
+        return arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.DTEND,
+            CalendarContract.Events.EVENT_LOCATION,
+            CalendarContract.Events.DESCRIPTION,
+            CalendarContract.Events.CALENDAR_ID
+        )
+    }
+
+    private fun readEvents(cursor: Cursor?): WritableArray {
+        val events = mutableListOf<WritableMap>()
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                val calendarId =
+                    it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID))
+
+                val event = Arguments.createMap().apply {
+                    putString(
+                        "id",
+                        it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events._ID)).toString()
+                    )
+                    putString(
+                        "title",
+                        it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.TITLE)) ?: ""
+                    )
+                    putDouble(
+                        "startDate",
+                        it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)) / 1000.0
+                    )
+                    putDouble(
+                        "endDate",
+                        it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTEND)) / 1000.0
+                    )
+                    putString(
+                        "location",
+                        it.getString(
+                            it.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION)
+                        ) ?: ""
+                    )
+                    putString(
+                        "notes",
+                        it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION))
+                            ?: ""
+                    )
+                    putString("calendarName", getCalendarNameById(calendarId))
+                }
+
+                events.add(event)
+            }
+        }
+
+        return Arguments.makeNativeArray(events)
+    }
+
+    private fun rejectPermissionDenied(promise: Promise, action: String) {
+        promise.reject("PERMISSION_DENIED", "Calendar permission is required to $action")
     }
 
     private fun hasCalendarReadPermission(): Boolean {
@@ -235,27 +441,18 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     }
 
     private fun getCalendarId(calendarName: String): Long {
-        return findCalendarId(calendarName, visibleOnly = true)
-            ?: findCalendarId(calendarName, visibleOnly = false)
+        return findCalendarId(calendarName, true)
+            ?: findCalendarId(calendarName, false)
             ?: getDefaultCalendarId()
     }
 
     private fun getDefaultCalendarId(): Long {
-        return findCalendarId("", visibleOnly = true)
-            ?: findCalendarId("", visibleOnly = false)
+        return findCalendarId("", true)
+            ?: findCalendarId("", false)
             ?: throw Exception("No writable calendars found on device")
     }
 
-    private fun findCalendarId(
-        calendarName: String,
-        visibleOnly: Boolean
-    ): Long? {
-        val projection = arrayOf(
-            CalendarContract.Calendars._ID,
-            CalendarContract.Calendars.NAME,
-            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
-        )
-
+    private fun findCalendarId(calendarName: String, visibleOnly: Boolean): Long? {
         val selectionParts = mutableListOf(
             "${CalendarContract.Calendars.SYNC_EVENTS} = 1",
             "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= ${CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR}"
@@ -274,12 +471,12 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
             selectionArgs.add(calendarName)
         }
 
-        val cursor: Cursor? = reactApplicationContext.contentResolver.query(
+        val cursor = reactApplicationContext.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
-            projection,
+            arrayOf(CalendarContract.Calendars._ID),
             selectionParts.joinToString(" AND "),
             if (selectionArgs.isEmpty()) null else selectionArgs.toTypedArray(),
-             "${CalendarContract.Calendars._ID} ASC"
+            "${CalendarContract.Calendars._ID} ASC"
         )
 
         return cursor?.use {
@@ -292,15 +489,11 @@ class DeviceCalendarModule(reactContext: ReactApplicationContext) :
     }
 
     private fun getCalendarNameById(calendarId: Long): String {
-        val projection = arrayOf(CalendarContract.Calendars.NAME)
-        val selection = "${CalendarContract.Calendars._ID} = ?"
-        val selectionArgs = arrayOf(calendarId.toString())
-
-        val cursor: Cursor? = reactApplicationContext.contentResolver.query(
+        val cursor = reactApplicationContext.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            selection,
-            selectionArgs,
+            arrayOf(CalendarContract.Calendars.NAME),
+            "${CalendarContract.Calendars._ID} = ?",
+            arrayOf(calendarId.toString()),
             null
         )
 

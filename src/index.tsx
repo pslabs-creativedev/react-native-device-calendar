@@ -16,12 +16,11 @@ const DeviceCalendarModule = NativeModules.DeviceCalendarModule
       }
     );
 
-// Type Definitions
 export interface CalendarEvent {
   id: string | number;
   title: string;
-  startDate: number; // Unix timestamp in seconds
-  endDate: number; // Unix timestamp in seconds
+  startDate: number;
+  endDate: number;
   location?: string;
   notes?: string;
   calendarName?: string;
@@ -34,13 +33,17 @@ export interface Calendar {
   allowsModifications?: boolean;
 }
 
-export interface CreateEventParams {
+export interface EventInput {
   title: string;
   startDate: Date;
   endDate: Date;
   location?: string;
   notes?: string;
   calendarName?: string;
+}
+
+export interface OpenEventEditorParams extends EventInput {
+  eventId?: string | number;
 }
 
 export interface GetEventsParams {
@@ -56,15 +59,119 @@ export type PermissionStatus =
   | 'restricted'
   | 'unknown';
 
+export type CalendarActionStatus = 'saved' | 'opened' | 'cancelled';
+
+export interface CalendarActionResult {
+  status: CalendarActionStatus;
+  eventId: string | number | null;
+}
+
+export type CalendarErrorCode =
+  | 'PERMISSION_DENIED'
+  | 'PERMISSION_ERROR'
+  | 'CREATE_ERROR'
+  | 'CREATE_IN_PROGRESS'
+  | 'UPDATE_ERROR'
+  | 'DELETE_ERROR'
+  | 'QUERY_ERROR'
+  | 'EVENT_NOT_FOUND'
+  | 'EDITOR_ERROR'
+  | 'PRESENT_ERROR'
+  | 'ACTIVITY_UNAVAILABLE'
+  | 'VALIDATION_ERROR'
+  | 'UNKNOWN_ERROR';
+
+export class DeviceCalendarError extends Error {
+  code: CalendarErrorCode;
+  cause?: unknown;
+
+  constructor(code: CalendarErrorCode, message: string, cause?: unknown) {
+    super(message);
+    this.name = 'DeviceCalendarError';
+    this.code = code;
+    this.cause = cause;
+  }
+}
+
 type PermissionAccess = 'read' | 'write';
+type NativeActionResult = {
+  status: CalendarActionStatus;
+  eventId?: string | number | null;
+};
+
 const ANDROID_CALENDAR_PERMISSIONS = [
   PermissionsAndroid.PERMISSIONS.READ_CALENDAR,
   PermissionsAndroid.PERMISSIONS.WRITE_CALENDAR,
 ] as const;
+
 const hasWritePermission = (status: PermissionStatus) =>
   status === 'authorized' || status === 'writeOnly';
 
 const hasReadPermission = (status: PermissionStatus) => status === 'authorized';
+
+const normalizeError = (error: unknown): DeviceCalendarError => {
+  if (error instanceof DeviceCalendarError) {
+    return error;
+  }
+
+  const maybeNative = error as
+    | {
+        code?: string;
+        message?: string;
+      }
+    | undefined;
+
+  const code = (maybeNative?.code || 'UNKNOWN_ERROR') as CalendarErrorCode;
+  const message = maybeNative?.message || 'Unknown calendar error';
+
+  return new DeviceCalendarError(code, message, error);
+};
+
+const validateEventInput = (params: EventInput) => {
+  if (!params.title.trim()) {
+    throw new DeviceCalendarError(
+      'VALIDATION_ERROR',
+      'Event title is required.'
+    );
+  }
+
+  if (
+    Number.isNaN(params.startDate.getTime()) ||
+    Number.isNaN(params.endDate.getTime())
+  ) {
+    throw new DeviceCalendarError(
+      'VALIDATION_ERROR',
+      'Valid startDate and endDate are required.'
+    );
+  }
+
+  if (params.startDate.getTime() >= params.endDate.getTime()) {
+    throw new DeviceCalendarError(
+      'VALIDATION_ERROR',
+      'startDate must be earlier than endDate.'
+    );
+  }
+};
+
+const getNativeEventArgs = (params: EventInput) =>
+  [
+    params.title,
+    params.startDate.getTime() / 1000,
+    params.endDate.getTime() / 1000,
+    params.location || '',
+    params.notes || '',
+    params.calendarName || '',
+  ] as const;
+
+const normalizeActionResult = (
+  result: NativeActionResult
+): CalendarActionResult => ({
+  status: result.status,
+  eventId:
+    result.eventId === undefined || result.eventId === null
+      ? null
+      : result.eventId,
+});
 
 const ensurePermission = async (
   access: PermissionAccess
@@ -81,7 +188,8 @@ const ensurePermission = async (
 
   const granted = await requestPermissions();
   if (!granted) {
-    throw new Error(
+    throw new DeviceCalendarError(
+      'PERMISSION_DENIED',
       access === 'write'
         ? 'Calendar write access is required before creating an event.'
         : 'Calendar access is required before reading calendar data.'
@@ -95,7 +203,8 @@ const ensurePermission = async (
       : hasReadPermission(nextStatus);
 
   if (!hasNextAccess) {
-    throw new Error(
+    throw new DeviceCalendarError(
+      'PERMISSION_DENIED',
       access === 'write'
         ? 'Calendar write access is required before creating an event.'
         : 'Calendar access is required before reading calendar data.'
@@ -105,15 +214,6 @@ const ensurePermission = async (
   return nextStatus;
 };
 
-/**
- * Check if the app has calendar permissions
- * @returns Permission status string
- * @example
- * const status = await checkPermissions();
- * if (status === 'authorized' || status === 'writeOnly') {
- *   // Has calendar access
- * }
- */
 export const checkPermissions = async (): Promise<PermissionStatus> => {
   try {
     if (Platform.OS === 'android') {
@@ -135,23 +235,12 @@ export const checkPermissions = async (): Promise<PermissionStatus> => {
       return 'denied';
     }
 
-    const status = await DeviceCalendarModule.checkPermissions();
-    return status as PermissionStatus;
+    return (await DeviceCalendarModule.checkPermissions()) as PermissionStatus;
   } catch (error) {
-    console.error('Failed to check calendar permissions:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-/**
- * Request calendar permissions from the user
- * @returns Boolean indicating if permission was granted
- * @example
- * const granted = await requestPermissions();
- * if (granted) {
- *   // Permission granted
- * }
- */
 export const requestPermissions = async (): Promise<boolean> => {
   try {
     if (Platform.OS === 'android') {
@@ -173,7 +262,8 @@ export const requestPermissions = async (): Promise<boolean> => {
           PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
 
       if (permanentlyDenied) {
-        throw new Error(
+        throw new DeviceCalendarError(
+          'PERMISSION_DENIED',
           'Calendar permission is permanently denied. Open app settings to enable Calendar access.'
         );
       }
@@ -181,61 +271,60 @@ export const requestPermissions = async (): Promise<boolean> => {
       return androidHasReadPermission && androidHasWritePermission;
     }
 
-    const granted = await DeviceCalendarModule.requestPermissions();
-    return granted as boolean;
+    return (await DeviceCalendarModule.requestPermissions()) as boolean;
   } catch (error) {
-    console.error('Failed to request calendar permissions:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-/**
- * Create a new event in the device calendar
- * @param params - Event details
- * @returns Event ID
- * @example
- * const eventId = await createEvent({
- *   title: 'Meeting',
- *   startDate: new Date(),
- *   endDate: new Date(Date.now() + 3600000),
- *   location: 'Conference Room',
- *   notes: 'Discuss project',
- *   calendarName: 'Work'
- * });
- */
 export const createEvent = async (
-  params: CreateEventParams
-): Promise<string | number> => {
+  params: EventInput
+): Promise<CalendarActionResult> => {
   try {
+    validateEventInput(params);
     await ensurePermission('write');
-    const eventId = await DeviceCalendarModule.createEvent(
-      params.title,
-      params.startDate.getTime() / 1000,
-      params.endDate.getTime() / 1000,
-      params.location || '',
-      params.notes || '',
-      params.calendarName || ''
-    );
-    return eventId;
+    const result = (await DeviceCalendarModule.createEvent(
+      ...getNativeEventArgs(params)
+    )) as NativeActionResult;
+    return normalizeActionResult(result);
   } catch (error) {
-    console.error('Failed to create calendar event:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-/**
- * Get events from the device calendar within a date range
- * @param params - Date range
- * @returns Array of calendar events
- * @example
- * const events = await getEvents({
- *   startDate: new Date('2024-01-01'),
- *   endDate: new Date('2024-12-31')
- * });
- * events.forEach(event => {
- *   console.log(event.title, new Date(event.startDate * 1000));
- * });
- */
+export const updateEvent = async (
+  eventId: string | number,
+  params: EventInput
+): Promise<CalendarActionResult> => {
+  try {
+    validateEventInput(params);
+    await ensurePermission('write');
+    const result = (await DeviceCalendarModule.updateEvent(
+      eventId.toString(),
+      ...getNativeEventArgs(params)
+    )) as NativeActionResult;
+    return normalizeActionResult(result);
+  } catch (error) {
+    throw normalizeError(error);
+  }
+};
+
+export const openEventEditor = async (
+  params: OpenEventEditorParams
+): Promise<CalendarActionResult> => {
+  try {
+    validateEventInput(params);
+    await ensurePermission('write');
+    const result = (await DeviceCalendarModule.openEventEditor(
+      params.eventId?.toString() || '',
+      ...getNativeEventArgs(params)
+    )) as NativeActionResult;
+    return normalizeActionResult(result);
+  } catch (error) {
+    throw normalizeError(error);
+  }
+};
+
 export const getEvents = async (
   params: GetEventsParams
 ): Promise<CalendarEvent[]> => {
@@ -247,60 +336,53 @@ export const getEvents = async (
     );
     return events as CalendarEvent[];
   } catch (error) {
-    console.error('Failed to get calendar events:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-/**
- * Delete an event from the device calendar
- * @param eventId - ID of the event to delete
- * @returns Boolean indicating success
- * @example
- * const success = await deleteEvent('event123');
- * if (success) {
- *   console.log('Event deleted');
- * }
- */
+export const findEventById = async (
+  eventId: string | number
+): Promise<CalendarEvent | null> => {
+  try {
+    await ensurePermission('read');
+    const event = await DeviceCalendarModule.findEventById(eventId.toString());
+    return (event as CalendarEvent | null) ?? null;
+  } catch (error) {
+    throw normalizeError(error);
+  }
+};
+
 export const deleteEvent = async (
   eventId: string | number
 ): Promise<boolean> => {
   try {
-    await ensurePermission('read');
-    const result = await DeviceCalendarModule.deleteEvent(eventId.toString());
-    return result as boolean;
+    await ensurePermission('write');
+    return (await DeviceCalendarModule.deleteEvent(
+      eventId.toString()
+    )) as boolean;
   } catch (error) {
-    console.error('Failed to delete calendar event:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-/**
- * Get all calendars on the device
- * @returns Array of calendars
- * @example
- * const calendars = await getCalendars();
- * calendars.forEach(calendar => {
- *   console.log(calendar.name, calendar.id);
- * });
- */
 export const getCalendars = async (): Promise<Calendar[]> => {
   try {
     await ensurePermission('read');
-    const calendars = await DeviceCalendarModule.getCalendars();
-    return calendars as Calendar[];
+    return (await DeviceCalendarModule.getCalendars()) as Calendar[];
   } catch (error) {
-    console.error('Failed to get calendars:', error);
-    throw error;
+    throw normalizeError(error);
   }
 };
 
-// Default export for convenience
 export default {
   checkPermissions,
   requestPermissions,
   createEvent,
+  updateEvent,
+  openEventEditor,
   getEvents,
+  findEventById,
   deleteEvent,
   getCalendars,
+  DeviceCalendarError,
 };
