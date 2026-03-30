@@ -1,6 +1,6 @@
 {
   "name": "react-native-device-calendar",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "React Native calendar module for creating, updating, reading, and editing native iOS and Android calendar events.",
   "source": "./src/index.tsx",
   "react-native": "./src/index.tsx",
